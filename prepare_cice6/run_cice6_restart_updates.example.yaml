@@ -1,0 +1,32 @@
+paths:
+  restart_in: /path/to/original/cice_model.res.20250103.00.nc
+  restart_out: /path/to/output/cice_model.res.20250103.00.updated.nc
+
+# Optional run controls
+options:
+  region: south   # south|north|global
+  insert_ice_thickness: true
+  # rdate: 20250103
+  # rhr: 0
+  # rdate_out: 20250103
+  # rhr_out: 0
+
+# target total ice concentration
+# pass interpolated iconc file/variable used by insert_iconc_ithkn_cice6_restart.py
+target_total_ice_concentration:
+  file: /path/to/iconc_target.nc
+  variable: ice_conc
+
+# target ice thickness
+# pass interpolated ithkn file/variable used by insert_iconc_ithkn_cice6_restart.py
+target_ice_thickness:
+  file: /path/to/ithkn_target.nc
+  variable: ice_thkn
+
+# target snow depth
+# pass interpolated snow depth file/variable used by insert_hsnow_cice6_restart.py
+target_snow_depth:
+  file: /path/to/hsnow_target.nc
+  variable: snow_depth
+
+# For region: global, provide all three target files above.

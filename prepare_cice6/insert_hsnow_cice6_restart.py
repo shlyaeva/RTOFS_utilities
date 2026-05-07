@@ -64,10 +64,20 @@ parser.add_argument("--rhr_out", help="output file, restart hour if date is diff
 parser.add_argument("--flrst_in", help="rest file in, otherwise name constructed from rest_date", type=str)
 parser.add_argument("--flrst_out", help="new rest file, otherwise name constructed from rdate_out", type=str)
 parser.add_argument("--regn", help=f"where icon incerted: south, north, global, default={regn}", type=str)
+parser.add_argument("--pth_in", help="input restart directory, default keeps script behavior", type=str)
+parser.add_argument("--pth_out", help="output restart directory, default uses input restart directory", type=str)
+parser.add_argument("--hsnow_file", help="optional custom interpolated snow depth file", type=str)
+parser.add_argument("--hsnow_var", help="variable name in --hsnow_file (default: snow_depth)",
+                    type=str, default="snow_depth")
 args = parser.parse_args()
 
 flrst_in  = args.flrst_in if args.flrst_in else None
 flrst_out = args.flrst_out if args.flrst_out else None
+pth_in = args.pth_in if args.pth_in else None
+pth_out = args.pth_out if args.pth_out else None
+hsnow_file = args.hsnow_file if args.hsnow_file else None
+hsnow_var = args.hsnow_var if args.hsnow_var else "snow_depth"
+regn = args.regn if args.regn else regn
 
 # if rest_date and rest_date_out are provided
 # Derive dates assuming file nameing is cice_restart.res.YYYYMMDD.XX[XXX]
@@ -134,9 +144,11 @@ def extract_suffix(fname):
       return suffix
   return None
 
-#pthrest = os.path.join(pths_ufs[node_nm]["MOM6"]["pthrest"],'new')
-#pthrest = '/gpfs/f6/sfs-emc/proj-shared/Dmitry.Dukhovskoy/RUNDIRS/restart_da'
-pthrest = '/gpfs/f6/sfs-emc/proj-shared/Dmitry.Dukhovskoy/RUNDIRS/restart_sfs_C192mx025/ice/Neil_IC/GFS/mem008'
+if pth_in is None:
+  pthrest = '/gpfs/f6/sfs-emc/proj-shared/Dmitry.Dukhovskoy/RUNDIRS/restart_sfs_C192mx025/ice/Neil_IC/GFS/mem008'
+else:
+  pthrest = pth_in
+pthrest_out = pth_out if pth_out is not None else pthrest
 
 pthdata = pths_ufs[node_nm]["MOM6"]["pthdata"]
 
@@ -174,15 +186,22 @@ hsnow_max = 500.   # to avoid very thick hsnow / ice_area which will cause picar
 rho_ocean = 1025.
 
 # Snow depth climatology, Interpolated fields mesh025:
-pthsnow = os.path.join(pthdata,'snow_nasa','monthly_clim')
-flhsn = 'SSMI_hsnow_mnthclim_1998_2007_mesh025_1440x1080_south.nc'
-dflhsn = os.path.join(pthsnow,flhsn)
+if hsnow_file is None:
+  if regn == 'global':
+    raise ValueError("For regn='global', provide --hsnow_file (and --hsnow_var if needed)")
+  pthsnow = os.path.join(pthdata,'snow_nasa','monthly_clim')
+  flhsn = 'SSMI_hsnow_mnthclim_1998_2007_mesh025_1440x1080_south.nc'
+  dflhsn = os.path.join(pthsnow,flhsn)
+else:
+  dflhsn = hsnow_file
 print(f"Reading interpolated hsnow {dflhsn}")
 with xarray.open_dataset(dflhsn) as ds_snow:
-  HSi = ds_snow['snow_depth'].isel(time=mmN-1).data.squeeze()
+  if hsnow_var not in ds_snow:
+    raise KeyError(f"Variable '{hsnow_var}' not found in {dflhsn}")
+  HSi = ds_snow[hsnow_var].isel(time=mmN-1).data.squeeze()
   LON = ds_snow['lon'].data
   LAT = ds_snow['lat'].data
-  units = ds_snow['snow_depth'].attrs.get('units', None)
+  units = ds_snow[hsnow_var].attrs.get('units', None)
   if units is not None:
     print(f"'snow_depth' units: {units}")
     hunits = units
@@ -471,7 +490,7 @@ if flrst_out is None:
     flrst_out = f"cice_model.res.{yrN}{mmN:02d}{ddN:02d}.{hrN:02d}.snow.nc"
   else:
     flrst_out = f"cice_model.res.{yrN}{mmN:02d}{ddN:02d}.{hrN:02d}.{sfx}.snow.nc"
-dflrst_out = os.path.join(pthrest,flrst_out)
+dflrst_out = os.path.join(pthrest_out,flrst_out)
 print(f"Saving CICE restart --> {dflrst_out}")
 ds_out.to_netcdf(dflrst_out, encoding={var: {'_FillValue': None} for var in ds_out.data_vars}, format='NETCDF3_64BIT')
 ds_out.close()

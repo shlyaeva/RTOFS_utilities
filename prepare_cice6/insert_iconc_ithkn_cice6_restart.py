@@ -82,7 +82,12 @@ parser.add_argument("--flrst_in", help="rest file in, otherwise name constructed
 parser.add_argument("--pth_out", help="output restart directory where new file be dumped, default=None", type=str)
 parser.add_argument("--flrst_out", help="new rest file, otherwise name constructed from rdate_out", type=str)
 parser.add_argument("--regn", help=f"where icon incerted", 
-                    choices=['north','south'], type=str)
+                    choices=['north','south','global'], type=str)
+parser.add_argument("--iconc_file", help="optional custom interpolated ice concentration file", type=str)
+parser.add_argument("--iconc_var", help="variable name in --iconc_file (default: ice_conc)", type=str,
+                    default="ice_conc")
+parser.add_argument("--ithkn_file", help="optional custom interpolated ice thickness file", type=str)
+parser.add_argument("--ithkn_var", help="optional variable name in --ithkn_file", type=str)
 args = parser.parse_args()
 
 ins_thkn = bool(args.ithkn)
@@ -110,6 +115,10 @@ else:
 
 pth_in = args.pth_in if args.pth_in else None
 pth_out = args.pth_out if args.pth_out else None
+iconc_file = args.iconc_file if args.iconc_file else None
+iconc_var = args.iconc_var if args.iconc_var else "ice_conc"
+ithkn_file = args.ithkn_file if args.ithkn_file else None
+ithkn_var = args.ithkn_var if args.ithkn_var else None
 
 print(f"Restart date input:  {rest_date}:{rest_hr}")
 print(f"Restart date output: {rest_date_out}:{rest_hr_out}")
@@ -208,34 +217,49 @@ if regn == 'south':
   RMsk[LAT > -60.] = 0
 elif regn == 'north':
   RMsk[LAT < 50.] = 0
+elif regn == 'global':
+  pass
 else:
   raise Exception(f"Unrecognized region {regn}")
 
 print(f"old restart: {yrR}/{mmR:02d}/{ddR:02d}:{hrR:02d}")
 print(f"new restart: {yrN}/{mmN:02d}/{ddN:02d}:{hrN:02d}")
 
-#fliceout = f'NSIDC_iconc_interp_mesh025_{jdm}x{idm}_{yrN}{mmN:02d}_{regn}.nc'
-pthnsidc, fliconc = mc6util.pathfname_icesnow_mesh025(fyaml, node_nm, "iconc_NSIDC", \
-                                                      YR=yrN, MM=mmN, regn=regn)
-dfliconc = os.path.join(pthnsidc,fliconc)
+if iconc_file is None:
+  if regn == 'global':
+    raise ValueError("For regn='global', provide --iconc_file (and --iconc_var if needed)")
+  pthnsidc, fliconc = mc6util.pathfname_icesnow_mesh025(
+      fyaml, node_nm, "iconc_NSIDC", YR=yrN, MM=mmN, regn=regn)
+  dfliconc = os.path.join(pthnsidc, fliconc)
+else:
+  dfliconc = iconc_file
 print(f'Loading interpolated ice conc {dfliconc}')
 with xarray.open_dataset(dfliconc) as dsint:
-  AICEint = dsint['ice_conc'].isel(time=ddN-1).squeeze()
+  if iconc_var not in dsint:
+    raise KeyError(f"Variable '{iconc_var}' not found in {dfliconc}")
+  AICEint = dsint[iconc_var].isel(time=ddN-1).squeeze()
 
 AICEint = np.where(RMsk == 0, np.nan, AICEint)
 
 # Read ice thickness data:
 if ins_thkn:
   var_opt = ['ice_thkn', 'ithkn', 'hi', 'ice_thickness']
-  pthithkn, flithkn = mc6util.pathfname_icesnow_mesh025(fyaml, node_nm, 'ithkn_clim', regn=regn)
-  dflithkn = os.path.join(pthithkn,flithkn)
+  if ithkn_file is None:
+    if regn == 'global':
+      raise ValueError("For regn='global' with --ithkn 1, provide --ithkn_file")
+    pthithkn, flithkn = mc6util.pathfname_icesnow_mesh025(fyaml, node_nm, 'ithkn_clim', regn=regn)
+    dflithkn = os.path.join(pthithkn, flithkn)
+  else:
+    dflithkn = ithkn_file
   
   #pthithkn = os.path.join(pthdata,'CryoSat2_antarctic_ice_snow_thkn','clim')
   #flithkn = 'CryoSat_hice_mnthclim_2011_2020_mesh025_1440x1080_south.nc'
   #dflithkn = os.path.join(pthithkn,flithkn)
-  ithkn_varnm = find_varnm(dflithkn, var_opt)
+  ithkn_varnm = ithkn_var if ithkn_var else find_varnm(dflithkn, var_opt)
   print(f"Reading ice thickn varnm='{ithkn_varnm}' for month {mmN} from {dflithkn}")
   with xarray.open_dataset(dflithkn) as ds_ithkn:
+    if ithkn_varnm not in ds_ithkn:
+      raise KeyError(f"Variable '{ithkn_varnm}' not found in {dflithkn}")
     ITHKN = ds_ithkn[ithkn_varnm].isel(time=mmN-1).data
 else:
   ITHKN = np.full_like(HH, np.nan)

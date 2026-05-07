@@ -1,0 +1,27 @@
+paths:
+  restart_in: /path/to/original/cice_model.res.20250103.00.nc
+  restart_out: /path/to/output/cice_model.res.20250103.00.global_updated.nc
+
+options:
+  region: global
+  insert_ice_thickness: true
+  # Optional overrides (uncomment if needed)
+  # rdate: 20250103
+  # rhr: 0
+  # rdate_out: 20250103
+  # rhr_out: 0
+
+# REQUIRED in global mode:
+# Provide all three target files explicitly.
+
+target_total_ice_concentration:
+  file: /path/to/global_iconc_target.nc
+  variable: ice_conc
+
+target_ice_thickness:
+  file: /path/to/global_ithkn_target.nc
+  variable: ice_thkn
+
+target_snow_depth:
+  file: /path/to/global_hsnow_target.nc
+  variable: snow_depth
