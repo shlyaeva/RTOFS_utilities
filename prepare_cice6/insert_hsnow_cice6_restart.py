@@ -24,16 +24,13 @@ import matplotlib.colors as colors
 from yaml import safe_load
 from mpl_toolkits.basemap import Basemap, cm
 import argparse
+from pathlib import Path
 
-PPTHN = None
-if 'PPTHN' not in locals() or PPTHN is None:
-  cwd = os.getcwd()
-  parts = cwd.split(os.sep)
-  if 'python' in parts:
-    idx = parts.index('python')
-    PPTHN = os.sep + os.path.join(*parts[:idx + 1])
-  else:
-    raise RuntimeError("Directory 'python' not found in current working directory path.")
+PPTHN = os.environ.get("PPTHN")
+if not PPTHN:
+  # Repository-local fallback (works independent of current working directory)
+  # .../RTOFS_utilities/prepare_cice6/<script>.py -> .../RTOFS_utilities
+  PPTHN = str(Path(__file__).resolve().parents[1])
 
 sys.path.extend([
     os.path.join(PPTHN, 'MyPython', 'hycom_utils'),
