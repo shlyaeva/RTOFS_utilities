@@ -9,6 +9,7 @@ It only provides flexible input/output and target-file configuration.
 """
 
 import argparse
+import re
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,28 @@ def _require(mapping, key_path):
 
 def _as_str(path_like):
     return str(Path(path_like))
+
+
+def _get_first_present(mapping, keys, default=None):
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return default
+
+
+def _infer_rdate_from_path(path_like):
+    path_text = str(path_like)
+    # Prefer path segment boundaries around YYYYMMDD-like tokens.
+    match = re.search(r"(?:^|[^0-9])(\d{8})(?:[^0-9]|$)", path_text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _to_int_or_none(value):
+    if value is None:
+        return None
+    return int(value)
 
 
 def main():
@@ -64,6 +87,22 @@ def main():
     restart_out_dir = restart_out.parent
     restart_out_name = restart_out.name
 
+    # Resolve restart date/hour from common key aliases first,
+    # then infer date from path tokens if needed.
+    rdate = _to_int_or_none(_get_first_present(options, ["rdate", "restart_date", "date", "rdate_in"]))
+    rhr = _to_int_or_none(_get_first_present(options, ["rhr", "restart_hour", "hour", "rhr_in"], default=0))
+    rdate_out = _to_int_or_none(_get_first_present(options, ["rdate_out", "restart_date_out", "date_out"]))
+    rhr_out = _to_int_or_none(_get_first_present(options, ["rhr_out", "restart_hour_out", "hour_out"]))
+
+    if rdate is None:
+        rdate = _infer_rdate_from_path(restart_in)
+    if rdate_out is None:
+        rdate_out = _infer_rdate_from_path(restart_out)
+    if rdate_out is None:
+        rdate_out = rdate
+    if rhr_out is None:
+        rhr_out = rhr
+
     with tempfile.TemporaryDirectory(prefix="cice6_update_") as td:
         temp_dir = Path(td)
         temp_stage1_name = "stage1.iconc_ithkn.nc"
@@ -79,14 +118,14 @@ def main():
             "--flrst_out", temp_stage1_name,
         ]
 
-        if "rdate" in options:
-            cmd1 += ["--rdate", str(options["rdate"])]
-        if "rhr" in options:
-            cmd1 += ["--rhr", str(options["rhr"])]
-        if "rdate_out" in options:
-            cmd1 += ["--rdate_out", str(options["rdate_out"])]
-        if "rhr_out" in options:
-            cmd1 += ["--rhr_out", str(options["rhr_out"])]
+        if rdate is not None:
+            cmd1 += ["--rdate", str(rdate)]
+        if rhr is not None:
+            cmd1 += ["--rhr", str(rhr)]
+        if rdate_out is not None:
+            cmd1 += ["--rdate_out", str(rdate_out)]
+        if rhr_out is not None:
+            cmd1 += ["--rhr_out", str(rhr_out)]
 
         if "file" in stage1:
             cmd1 += ["--iconc_file", _as_str(stage1["file"])]
@@ -111,14 +150,14 @@ def main():
             "--flrst_out", restart_out_name,
         ]
 
-        if "rdate" in options:
-            cmd2 += ["--rdate", str(options["rdate"])]
-        if "rhr" in options:
-            cmd2 += ["--rhr", str(options["rhr"])]
-        if "rdate_out" in options:
-            cmd2 += ["--rdate_out", str(options["rdate_out"])]
-        if "rhr_out" in options:
-            cmd2 += ["--rhr_out", str(options["rhr_out"])]
+        if rdate is not None:
+            cmd2 += ["--rdate", str(rdate)]
+        if rhr is not None:
+            cmd2 += ["--rhr", str(rhr)]
+        if rdate_out is not None:
+            cmd2 += ["--rdate_out", str(rdate_out)]
+        if rhr_out is not None:
+            cmd2 += ["--rhr_out", str(rhr_out)]
 
         if "file" in stage3:
             cmd2 += ["--hsnow_file", _as_str(stage3["file"])]

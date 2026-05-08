@@ -27,10 +27,10 @@ paths:
 options:                       # optional
   region: south                # south|north|global
   insert_ice_thickness: true   # stage-1 --ithkn (0/1)
-  # rdate: 20250103
-  # rhr: 0
-  # rdate_out: 20250103
-  # rhr_out: 0
+  # rdate: 20250103            # aliases accepted: restart_date, date, rdate_in
+  # rhr: 0                     # aliases accepted: restart_hour, hour, rhr_in
+  # rdate_out: 20250103        # aliases accepted: restart_date_out, date_out
+  # rhr_out: 0                 # aliases accepted: restart_hour_out, hour_out
 
 target_total_ice_concentration:   # optional custom file for iconc
   file: /path/to/iconc_target.nc
@@ -86,8 +86,9 @@ Everything else is optional.
   - Keep `options.region` consistent with the target datasets (`south` vs `north`).
 
 - **Date/hour handling**
-  - If omitted, scripts infer from filenames/defaults exactly as before.
-  - Use `rdate/rhr/rdate_out/rhr_out` only when you need to override.
+  - If restart filename has no `YYYYMMDD`, set `rdate` (or one of its aliases).
+  - Runner also attempts to infer date from path tokens (e.g. `/.../20240715/...`).
+  - If omitted and no date token is found in file/path, stage scripts will stop with a clear message.
 
 ## Notes
 
