@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import importlib
+import re
 from netCDF4 import Dataset as ncFile
 from copy import copy
 import matplotlib.colors as colors
@@ -1304,7 +1305,8 @@ def get_date_filename(file_name, nnumb_date=8):
   """
   assert nnumb_date >= 8
   year = month = day = hr = mint = sec = None
-  parts = file_name.split('.')
+  base_name = os.path.basename(file_name)
+  parts = base_name.split('.')
   len_name = len(parts)
 
   # Find date part:
@@ -1316,7 +1318,35 @@ def get_date_filename(file_name, nnumb_date=8):
       break
 
   if idate is None:
-    raise ValueError(f"Could not identify date and time in {file_name}")
+    # Fallback: date/time may not be dot-delimited, e.g. file_YYYYMMDD_HH.nc
+    # Try to find YYYYMMDD with optional adjacent HH or SSSSSS in basename.
+    match = re.search(r'(?<!\d)(\d{8})(?:\D*(\d{2}|\d{6}))?(?!\d)', base_name)
+    if match is None:
+      raise ValueError(f"Could not identify date and time in {file_name}")
+
+    date_str = match.group(1)
+    year = int(date_str[0:4])
+    month = int(date_str[4:6])
+    day = int(date_str[6:8])
+    hr = mint = 0
+
+    time_str = match.group(2)
+    if not time_str:
+      return year, month, day, hr, mint
+
+    time_val = int(time_str)
+    if len(time_str) == 2:
+      hr = time_val
+      mint = 0
+    else:
+      if time_val <= 86400:
+        hr = time_val // 3600
+        mint = (time_val % 3600) // 60
+      else:
+        hr = time_val // 10000
+        mint = 0
+
+    return year, month, day, hr, mint
 
   date_str = parts[idate][:8]
 

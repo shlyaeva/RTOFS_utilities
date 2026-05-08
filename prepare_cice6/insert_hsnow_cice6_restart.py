@@ -79,17 +79,40 @@ regn = args.regn if args.regn else regn
 # if rest_date and rest_date_out are provided
 # Derive dates assuming file nameing is cice_restart.res.YYYYMMDD.XX[XXX]
 if flrst_in is not None:
-  yrR, mmR, ddR, hrR, mintR = mc6util.get_date_filename(flrst_in)
-  rest_date = int(yrR*1e4 + mmR*100 + ddR)
-  rest_hr = hrR
+  try:
+    yrR, mmR, ddR, hrR, mintR = mc6util.get_date_filename(flrst_in)
+    rest_date = int(yrR*1e4 + mmR*100 + ddR)
+    rest_hr = hrR
+  except ValueError:
+    if args.rdate is None:
+      raise ValueError(
+        f"Could not parse date from --flrst_in='{flrst_in}'. "
+        "Provide --rdate (and optionally --rhr) or use a filename containing YYYYMMDD."
+      )
+    rest_date = args.rdate
+    rest_hr = args.rhr if args.rhr is not None else rest_hr
 else:
   rest_date = args.rdate if args.rdate else rest_date
   rest_hr   = args.rhr if args.rhr else rest_hr
 
 if flrst_out is not None:
-  yrN, mmN, ddN, hrN, mintN = mc6util.get_date_filename(flrst_out)
-  rest_date_out = int(yrN*1e4 + mmN*100 + ddN)
-  rest_hr_out = hrN  
+  try:
+    yrN, mmN, ddN, hrN, mintN = mc6util.get_date_filename(flrst_out)
+    rest_date_out = int(yrN*1e4 + mmN*100 + ddN)
+    rest_hr_out = hrN
+  except ValueError:
+    if args.rdate_out is None and args.rdate is None:
+      raise ValueError(
+        f"Could not parse date from --flrst_out='{flrst_out}'. "
+        "Provide --rdate_out/--rhr_out (or --rdate/--rhr) or use a filename containing YYYYMMDD."
+      )
+    rest_date_out = args.rdate_out if args.rdate_out is not None else rest_date
+    if args.rhr_out is not None:
+      rest_hr_out = args.rhr_out
+    elif args.rhr is not None:
+      rest_hr_out = args.rhr
+    else:
+      rest_hr_out = rest_hr
 else:
   rest_date_out = args.rdate_out if args.rdate_out else rest_date
   rest_hr_out   = args.rhr_out if args.rhr_out else rest_hr
