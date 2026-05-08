@@ -197,6 +197,10 @@ def main():
 
         if mom6_data_dir is not None:
             cmd2 += ["--mom6_data_dir", _as_str(mom6_data_dir)]
+        if mom6_grid_dir is not None:
+            cmd2 += ["--mom6_grid_dir", _as_str(mom6_grid_dir)]
+        if mom6_hgrid_file is not None:
+            cmd2 += ["--mom6_hgrid_file", _as_str(mom6_hgrid_file)]
 
         print("[2/2] Running hsnow insertion...")
         subprocess.run(cmd2, check=True)

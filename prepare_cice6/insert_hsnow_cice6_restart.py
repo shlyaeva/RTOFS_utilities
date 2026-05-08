@@ -36,13 +36,14 @@ sys.path.extend([
 
 import mod_time as mtime
 import mod_swstate as msws
+import mod_mom6 as mmom6
 import mod_cice6_utils as mc6util
 importlib.reload(mc6util)
 
 
 def _select_time_like_slice(data_array, target_index):
   dims = list(data_array.dims)
-  exact_candidates = ['time', 'Time']
+  exact_candidates = ['time', 'Time', 'TIME', 'time_counter']
   for dim_name in exact_candidates:
     if dim_name in dims:
       dim_len = data_array.sizes[dim_name]
@@ -56,6 +57,23 @@ def _select_time_like_slice(data_array, target_index):
       return data_array.isel({dim_name: idx})
 
   return data_array
+
+
+def _read_lon_lat_from_dataset(ds_obj):
+  lon_lat_pairs = [
+      ('lon', 'lat'),
+      ('LON', 'LAT'),
+      ('TLON', 'TLAT'),
+      ('geolon', 'geolat'),
+      ('GEOLON', 'GEOLAT'),
+  ]
+  for lon_nm, lat_nm in lon_lat_pairs:
+    if lon_nm in ds_obj and lat_nm in ds_obj:
+      lon = ds_obj[lon_nm].data.squeeze()
+      lat = ds_obj[lat_nm].data.squeeze()
+      if lon.ndim == 2 and lat.ndim == 2:
+        return lon, lat
+  return None, None
 
 rest_date = 20250103
 rest_hr   = 0
@@ -76,6 +94,8 @@ parser.add_argument("--regn", help=f"where icon incerted: south, north, global, 
 parser.add_argument("--pth_in", help="input restart directory, default keeps script behavior", type=str)
 parser.add_argument("--pth_out", help="output restart directory, default uses input restart directory", type=str)
 parser.add_argument("--mom6_data_dir", help="override MOM6 data root directory", type=str)
+parser.add_argument("--mom6_grid_dir", help="override MOM6 grid directory", type=str)
+parser.add_argument("--mom6_hgrid_file", help="override full path to MOM6 hgrid file", type=str)
 parser.add_argument("--hsnow_file", help="optional custom interpolated snow depth file", type=str)
 parser.add_argument("--hsnow_var", help="variable name in --hsnow_file (default: snow_depth)",
                     type=str, default="snow_depth")
@@ -86,6 +106,8 @@ flrst_out = args.flrst_out if args.flrst_out else None
 pth_in = args.pth_in if args.pth_in else None
 pth_out = args.pth_out if args.pth_out else None
 mom6_data_dir = args.mom6_data_dir if args.mom6_data_dir else None
+mom6_grid_dir = args.mom6_grid_dir if args.mom6_grid_dir else None
+mom6_hgrid_file = args.mom6_hgrid_file if args.mom6_hgrid_file else None
 hsnow_file = args.hsnow_file if args.hsnow_file else None
 hsnow_var = args.hsnow_var if args.hsnow_var else "snow_depth"
 regn = args.regn if args.regn else regn
@@ -197,6 +219,14 @@ if mom6_data_dir is None:
 else:
   pthdata = mom6_data_dir
 
+if mom6_hgrid_file is None:
+  if mom6_grid_dir is None:
+    pthgrid = pths_ufs[node_nm]["MOM6"].get("pthgrid", None)
+  else:
+    pthgrid = mom6_grid_dir
+  if pthgrid is not None:
+    mom6_hgrid_file = os.path.join(pthgrid, "ocean_hgrid.1440x1080.nc")
+
 # CICE parameters:
 puny      = 1.e-11
 c0        = 0.0
@@ -250,8 +280,7 @@ with xarray.open_dataset(dflhsn) as ds_snow:
   if hsnow_var not in ds_snow:
     raise KeyError(f"Variable '{hsnow_var}' not found in {dflhsn}")
   HSi = _select_time_like_slice(ds_snow[hsnow_var], mmN-1).data.squeeze()
-  LON = ds_snow['lon'].data
-  LAT = ds_snow['lat'].data
+  LON, LAT = _read_lon_lat_from_dataset(ds_snow)
   units = ds_snow[hsnow_var].attrs.get('units', None)
   if units is not None:
     print(f"'snow_depth' units: {units}")
@@ -290,6 +319,25 @@ sicen1 = ds_in['sice001'].data # ice S, layer 1
 apndn  = ds_in['apnd'].data    # the fraction of the pond of ice area, for each cat
 hpndn  = ds_in['hpnd'].data    # depth of the ponds in a cell, by cats
 ncat, jdim, idim = vsnon.shape
+
+if LON is None or LAT is None:
+  if mom6_hgrid_file is not None and os.path.isfile(mom6_hgrid_file):
+    with xarray.open_dataset(mom6_hgrid_file) as ds_grid:
+      LON, LAT = _read_lon_lat_from_dataset(ds_grid)
+    if LON is None or LAT is None:
+      try:
+        LON, LAT = mmom6.read_mom6grid(mom6_hgrid_file, grdpnt='hgrid')
+      except Exception:
+        LON = LAT = None
+
+if LON is None or LAT is None:
+  LON, LAT = _read_lon_lat_from_dataset(ds_in)
+  if LON is None or LAT is None:
+    jj, ii = np.indices((jdim, idim))
+    LON = ii.astype(float)
+    LAT = jj.astype(float)
+    print("WARNING: lon/lat coordinates not found in target or restart files; using i/j indices for diagnostics")
+
 ds_in.close()
 
 # Aggregated ice partial area:
