@@ -83,6 +83,24 @@ def _read_ocean_mask_from_gridfile(dfgrid):
 
   return None
 
+
+def _select_time_like_slice(data_array, target_index):
+  dims = list(data_array.dims)
+  exact_candidates = ['time', 'Time']
+  for dim_name in exact_candidates:
+    if dim_name in dims:
+      dim_len = data_array.sizes[dim_name]
+      idx = int(np.clip(target_index, 0, max(dim_len - 1, 0)))
+      return data_array.isel({dim_name: idx})
+
+  for dim_name in dims:
+    if 'time' in dim_name.lower():
+      dim_len = data_array.sizes[dim_name]
+      idx = int(np.clip(target_index, 0, max(dim_len - 1, 0)))
+      return data_array.isel({dim_name: idx})
+
+  return data_array
+
 rest_date = 20250103
 rest_hr = 0
 regn = 'south'
@@ -339,7 +357,7 @@ print(f'Loading interpolated ice conc {dfliconc}')
 with xarray.open_dataset(dfliconc) as dsint:
   if iconc_var not in dsint:
     raise KeyError(f"Variable '{iconc_var}' not found in {dfliconc}")
-  AICEint = dsint[iconc_var].isel(time=ddN-1).squeeze()
+  AICEint = _select_time_like_slice(dsint[iconc_var], ddN-1).squeeze()
 
 AICEint = np.where(RMsk == 0, np.nan, AICEint)
 
@@ -368,7 +386,7 @@ if ins_thkn:
   with xarray.open_dataset(dflithkn) as ds_ithkn:
     if ithkn_varnm not in ds_ithkn:
       raise KeyError(f"Variable '{ithkn_varnm}' not found in {dflithkn}")
-    ITHKN = ds_ithkn[ithkn_varnm].isel(time=mmN-1).data
+    ITHKN = _select_time_like_slice(ds_ithkn[ithkn_varnm], mmN-1).data
 else:
   ITHKN = np.full_like(HH, np.nan)
 

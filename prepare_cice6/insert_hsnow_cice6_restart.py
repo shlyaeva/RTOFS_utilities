@@ -39,6 +39,24 @@ import mod_swstate as msws
 import mod_cice6_utils as mc6util
 importlib.reload(mc6util)
 
+
+def _select_time_like_slice(data_array, target_index):
+  dims = list(data_array.dims)
+  exact_candidates = ['time', 'Time']
+  for dim_name in exact_candidates:
+    if dim_name in dims:
+      dim_len = data_array.sizes[dim_name]
+      idx = int(np.clip(target_index, 0, max(dim_len - 1, 0)))
+      return data_array.isel({dim_name: idx})
+
+  for dim_name in dims:
+    if 'time' in dim_name.lower():
+      dim_len = data_array.sizes[dim_name]
+      idx = int(np.clip(target_index, 0, max(dim_len - 1, 0)))
+      return data_array.isel({dim_name: idx})
+
+  return data_array
+
 rest_date = 20250103
 rest_hr   = 0
 hunits    = 'cm'
@@ -231,7 +249,7 @@ print(f"Reading interpolated hsnow {dflhsn}")
 with xarray.open_dataset(dflhsn) as ds_snow:
   if hsnow_var not in ds_snow:
     raise KeyError(f"Variable '{hsnow_var}' not found in {dflhsn}")
-  HSi = ds_snow[hsnow_var].isel(time=mmN-1).data.squeeze()
+  HSi = _select_time_like_slice(ds_snow[hsnow_var], mmN-1).data.squeeze()
   LON = ds_snow['lon'].data
   LAT = ds_snow['lat'].data
   units = ds_snow[hsnow_var].attrs.get('units', None)
