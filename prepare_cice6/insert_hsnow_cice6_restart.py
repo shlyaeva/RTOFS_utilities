@@ -13,6 +13,7 @@
 
 """
 import os
+import shutil
 import numpy as np
 import sys
 import importlib
@@ -20,6 +21,7 @@ import xarray
 from yaml import safe_load
 import argparse
 from pathlib import Path
+from netCDF4 import Dataset as ncFile
 
 PPTHN = os.environ.get("PPTHN")
 if not PPTHN:
@@ -302,7 +304,9 @@ if flrst_in is None:
 dflrst_in = os.path.join(pthrest, flrst_in)
 print(f"Reading restart: {dflrst_in}")
 ds_in = xarray.open_dataset(dflrst_in)
-ds_out = ds_in.copy(deep=True)
+
+restart_attrs = dict(ds_in.attrs)
+istep1_val = restart_attrs.get('istep1', None)
 
 # Checks:
 assert nslyr == 1, f"Code needs to be modified for nslyr>1, nslyr={nslyr}"
@@ -319,6 +323,15 @@ sicen1 = ds_in['sice001'].data # ice S, layer 1
 apndn  = ds_in['apnd'].data    # the fraction of the pond of ice area, for each cat
 hpndn  = ds_in['hpnd'].data    # depth of the ponds in a cell, by cats
 ncat, jdim, idim = vsnon.shape
+
+aicen_dtype = ds_in['aicen'].dtype
+vsnon_dtype = ds_in['vsnon'].dtype
+qsnon_dtype = ds_in['qsno001'].dtype
+qicen1_dtype = ds_in['qice001'].dtype
+apndn_dtype = ds_in['apnd'].dtype
+hpndn_dtype = ds_in['hpnd'].dtype
+tsfcn_dtype = ds_in['Tsfcn'].dtype
+vicen_dtype = ds_in['vicen'].dtype
 
 if LON is None or LAT is None:
   if mom6_hgrid_file is not None and os.path.isfile(mom6_hgrid_file):
@@ -353,14 +366,14 @@ print(f"Found {npnts} points for insertion, min/max lat={np.min(Yins):.1f}/{np.m
        f" lon={np.min(Xins):.1f}/{np.max(Xins):.1f}")
 
 # Note qsnon, qice < 0 !
-aicen_new  = aicen.astype(ds_out['aicen'].dtype).copy()
-vsnon_new  = vsnon.astype(ds_out['vsnon'].dtype).copy()
-qsnon_new  = qsnon.astype(ds_out['qsno001'].dtype).copy()
-qicen1_new = qicen1.astype(ds_out['qice001'].dtype).copy()
-apndn_new  = apndn.astype(ds_out['apnd'].dtype).copy()
-hpndn_new  = hpndn.astype(ds_out['hpnd'].dtype).copy()
-tsfcn_new  = tsfcn.astype(ds_out['Tsfcn'].dtype).copy()
-vicen_new  = vicen.astype(ds_out['vicen'].dtype).copy()
+aicen_new  = aicen.astype(aicen_dtype).copy()
+vsnon_new  = vsnon.astype(vsnon_dtype).copy()
+qsnon_new  = qsnon.astype(qsnon_dtype).copy()
+qicen1_new = qicen1.astype(qicen1_dtype).copy()
+apndn_new  = apndn.astype(apndn_dtype).copy()
+hpndn_new  = hpndn.astype(hpndn_dtype).copy()
+tsfcn_new  = tsfcn.astype(tsfcn_dtype).copy()
+vicen_new  = vicen.astype(vicen_dtype).copy()
 
 dvol_sum = 0.
 print("Snow depth insertion ...")
@@ -499,36 +512,15 @@ for ipp in range(npnts):
   tsfcn_new[:,j0,i0]  = tsn_new
   vicen_new[:,j0,i0]  = vin_new
 
-  diff = np.nansum(vsn_new - vsnon[:, j0, i0])
-  diff2 = np.nansum(vsn_new -vsn)
-  diff3 = np.nansum(vsnon[:,j0,i0] - vsnon_new[:,j0,i0])
-  if diff == 0 and abs(diff2) > 0:
-    print(f"No change at {j0},{i0}, expected diff={diff2}")
-
-  if diff3 == 0 and abs(diff2) > 0:
-    print(f"No change in the arrays at {j0},{i0}, expected diff={diff2}")
-
 # Checking:
 print(f"Snow vol change: dvol_sum = {dvol_sum}")
 total_vsnon_init = np.nansum(vsnon)
 total_vsnon_new  = np.nansum(vsnon_new)
 print(f"Tot snow volume change (m3/m2): {total_vsnon_new - total_vsnon_init}")
 
-# Update data set:
-#ds_out = ds_out.assign(vsnon=vsnon_new, qsno001=qsnon_new)
-ds_out['aicen'].values[:]   = aicen_new
-ds_out['vsnon'].values[:]   = vsnon_new
-ds_out['qsno001'].values[:] = qsnon_new
-ds_out['qice001'].values[:] = qicen1_new
-ds_out['apnd'].values[:]    = apndn_new
-ds_out['hpnd'].values[:]    = hpndn_new
-ds_out['Tsfcn'].values[:]   = tsfcn_new
-ds_out['vicen'].values[:]   = vicen_new
-
 # Sanity checking:
-assert "vsnon" in ds_out and "qsno001" in ds_out, "Missing updated snow fields vsnon and qsno001"
-assert ds_out["vsnon"].shape == vsnon_new.shape, "Check shape of vsnon "
-assert ds_out["qsno001"].shape == qsnon_new.shape, "Check shape of qsnon "
+assert vsnon.shape == vsnon_new.shape, "Check shape of vsnon "
+assert qsnon.shape == qsnon_new.shape, "Check shape of qsnon "
 
 #A = STOP
 
@@ -568,8 +560,7 @@ print(" ")
 
 # Attributes:
 from datetime import datetime
-istep1_val = ds_out.attrs.get('istep1', None)
-ds_out.attrs.update({
+updated_attrs = {
     "title": "CICE6 restart with inserted hsnow from SSM/I NASA gridded fields for S. Ocean",
     "source": "insert_hsnow_cice6_restart.py",
     "istep1": np.int32(istep1_val) if istep1_val is not None else np.int32(0), 
@@ -578,7 +569,7 @@ ds_out.attrs.update({
     "mday": np.int32(ddN),
     "msec": np.int32(nsecN),
     "history": f"Modified {datetime.now().isoformat()}",
-})
+}
 
 # Save:flrst_in
 # Construct output file name if not provided:
@@ -591,8 +582,20 @@ if flrst_out is None:
     flrst_out = f"cice_model.res.{yrN}{mmN:02d}{ddN:02d}.{hrN:02d}.{sfx}.snow.nc"
 dflrst_out = os.path.join(pthrest_out,flrst_out)
 print(f"Saving CICE restart --> {dflrst_out}")
-ds_out.to_netcdf(dflrst_out, encoding={var: {'_FillValue': None} for var in ds_out.data_vars}, format='NETCDF3_64BIT')
-ds_out.close()
+if os.path.abspath(dflrst_in) != os.path.abspath(dflrst_out):
+  shutil.copy2(dflrst_in, dflrst_out)
+
+with ncFile(dflrst_out, 'r+') as nc_out:
+  nc_out['aicen'][:] = aicen_new
+  nc_out['vsnon'][:] = vsnon_new
+  nc_out['qsno001'][:] = qsnon_new
+  nc_out['qice001'][:] = qicen1_new
+  nc_out['apnd'][:] = apndn_new
+  nc_out['hpnd'][:] = hpndn_new
+  nc_out['Tsfcn'][:] = tsfcn_new
+  nc_out['vicen'][:] = vicen_new
+  for attr_name, attr_value in updated_attrs.items():
+    nc_out.setncattr(attr_name, attr_value)
 
 
 f_chck = False

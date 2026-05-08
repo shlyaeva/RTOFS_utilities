@@ -13,6 +13,7 @@
 
 """
 import os
+import shutil
 import numpy as np
 import sys
 import importlib
@@ -20,6 +21,7 @@ import xarray
 from yaml import safe_load
 import argparse
 from pathlib import Path
+from netCDF4 import Dataset as ncFile
 
 PPTHN = os.environ.get("PPTHN")
 if not PPTHN:
@@ -396,26 +398,38 @@ if flrst_in is None:
 dflrst_in = os.path.join(pthrest, flrst_in)
 print(f"Reading restart: {dflrst_in}")
 ds_in = xarray.open_dataset(dflrst_in)
-ds_out = ds_in.copy(deep=True)
-ds_in.close()
+
+# Keep source attrs/dtypes and read arrays once; output writing is done with netCDF4 in-place.
+restart_attrs = dict(ds_in.attrs)
+istep1_val = restart_attrs.get('istep1', None)
 
 
 # Insert aice and distribute/reduce proportionally over ice cats.:
 assert nslyr == 1, f"Code needs to be modified for nslyr>1, nslyr={nslyr}"
-aicen = ds_out['aicen'].data  # partial area by cats
-vicen = ds_out['vicen'].data  # ice vol per m2 of grid cell by cats
-vsnon = ds_out['vsnon'].data  # snow vol per m2 of ice area
-qsnon = ds_out['qsno001'].data  # snow enthalpy by cats for 1 snow layer
-Tsfcn = ds_out['Tsfcn'].data  # surface T in each cat.
+aicen = ds_in['aicen'].data  # partial area by cats
+vicen = ds_in['vicen'].data  # ice vol per m2 of grid cell by cats
+vsnon = ds_in['vsnon'].data  # snow vol per m2 of ice area
+qsnon = ds_in['qsno001'].data  # snow enthalpy by cats for 1 snow layer
+Tsfcn = ds_in['Tsfcn'].data  # surface T in each cat.
 ncat, jdim, idim = vsnon.shape
+
+aicen_dtype = ds_in['aicen'].dtype
+vicen_dtype = ds_in['vicen'].dtype
+vsnon_dtype = ds_in['vsnon'].dtype
+qsnon_dtype = ds_in['qsno001'].dtype
+tsfcn_dtype = ds_in['Tsfcn'].dtype
 
 sice = {}
 qice = {}
 nilrs = 7   # ice layers
 for i in range(1, nilrs+1):
   varnum = f"{i:03d}" 
-  sice[varnum] = ds_out[f"sice{varnum}"].data
-  qice[varnum] = ds_out[f"qice{varnum}"].data
+  sice[varnum] = ds_in[f"sice{varnum}"].data
+  qice[varnum] = ds_in[f"qice{varnum}"].data
+
+sice_dtype = {f"{i:03d}": ds_in[f"sice{i:03d}"].dtype for i in range(1, nilrs+1)}
+qice_dtype = {f"{i:03d}": ds_in[f"qice{i:03d}"].dtype for i in range(1, nilrs+1)}
+ds_in.close()
 
 # Aggregated ice partial area:
 aice = np.sum(aicen, axis=0).squeeze()
@@ -484,17 +498,17 @@ dhi_min = 0.01  # min diff between cat ice thicknesses from 2 adjacent cats
 hcat_indx = np.arange(1,ncat+1)
 
 # Note qsnon, qice < 0 !
-vsnon_new = vsnon.astype(ds_out['vsnon'].dtype).copy()
-qsnon_new = qsnon.astype(ds_out['qsno001'].dtype).copy()
-aicen_new = aicen.astype(ds_out['aicen'].dtype).copy()
-vicen_new = vicen.astype(ds_out['vicen'].dtype).copy()
-Tsfcn_new = Tsfcn.astype(ds_out['Tsfcn'].dtype).copy()
+vsnon_new = vsnon.astype(vsnon_dtype).copy()
+qsnon_new = qsnon.astype(qsnon_dtype).copy()
+aicen_new = aicen.astype(aicen_dtype).copy()
+vicen_new = vicen.astype(vicen_dtype).copy()
+Tsfcn_new = Tsfcn.astype(tsfcn_dtype).copy()
 qicen_new = {}
 sicen_new = {}
 for i in range(1, nilrs+1):
   varnum = f"{i:03d}"
-  qicen_new[varnum] = qice[varnum].astype(ds_out[f"qice{varnum}"].dtype).copy()
-  sicen_new[varnum] = sice[varnum].astype(ds_out[f"sice{varnum}"].dtype).copy()
+  qicen_new[varnum] = qice[varnum].astype(qice_dtype[varnum]).copy()
+  sicen_new[varnum] = sice[varnum].astype(sice_dtype[varnum]).copy()
 
 Tfrz = -1.86243522  # ocean freez. T
 Tsfc_max = -0.1  # max surf temp
@@ -728,22 +742,9 @@ for ipp in range(npnts):
   #print(f"tot vsnon change = {vtot_new-vtot_init}") 
 
 
-# Update data set:
-#ds_out = ds_out.assign(vsnon=vsnon_new, qsno001=qsnon_new)
-ds_out['vsnon'].values[:]   = vsnon_new
-ds_out['qsno001'].values[:] = qsnon_new
-ds_out['aicen'].values[:]   = aicen_new
-ds_out['vicen'].values[:]   = vicen_new
-ds_out['Tsfcn'].values[:]   = Tsfcn_new
-for ilr in range(1, nilrs+1):
-  varnum = f"{ilr:03d}"
-  ds_out[f"sice{varnum}"].values[:] = sicen_new[f"{varnum}"]
-  ds_out[f"qice{varnum}"].values[:] = qicen_new[f"{varnum}"]
-
-
 # Sanity checking:
-assert ds_out["vsnon"].shape == vsnon_new.shape, "Check shape of vsnon "
-assert ds_out["qsno001"].shape == qsnon_new.shape, "Check shape of qsnon "
+assert vsnon.shape == vsnon_new.shape, "Check shape of vsnon "
+assert qsnon.shape == qsnon_new.shape, "Check shape of qsnon "
 
 # Check hice(n) as it is caclulated in icepack_therm_vertical.F90
 # hice(n) = vice(n) / aice(n) 
@@ -774,17 +775,16 @@ for k in range(1,ncat+1):
 
 # Attributes:
 from datetime import datetime
-istep1_val = ds_out.attrs.get('istep1', None)
-ds_out.attrs.update({
-    "title": f"CICE6 restart with inserted ice concentration from NSIDC NRT {rest_date_out} ",
-    "source": "insert_iconc_ithkn_cice6_restart.py",
-    "istep1": np.int32(istep1_val) if istep1_val is not None else np.int32(0), 
-    "myear": np.int32(yrN),
-    "mmonth": np.int32(mmN),
-    "mday": np.int32(ddN),
-    "msec": np.int32(nsecN),
-    "history": f"Modified {datetime.now().isoformat()}",
-})
+updated_attrs = {
+  "title": f"CICE6 restart with inserted ice concentration from NSIDC NRT {rest_date_out} ",
+  "source": "insert_iconc_ithkn_cice6_restart.py",
+  "istep1": np.int32(istep1_val) if istep1_val is not None else np.int32(0),
+  "myear": np.int32(yrN),
+  "mmonth": np.int32(mmN),
+  "mday": np.int32(ddN),
+  "msec": np.int32(nsecN),
+  "history": f"Modified {datetime.now().isoformat()}",
+}
 
 # Save:
 if flrst_out is None:
@@ -795,8 +795,21 @@ if flrst_out is None:
 
 dflrst_out = os.path.join(pthrest_out,flrst_out)
 print(f"Saving CICE restart --> {dflrst_out}")
-ds_out.to_netcdf(dflrst_out, encoding={var: {'_FillValue': None} for var in ds_out.data_vars}, format='NETCDF3_64BIT')
-ds_out.close()
+if os.path.abspath(dflrst_in) != os.path.abspath(dflrst_out):
+  shutil.copy2(dflrst_in, dflrst_out)
+
+with ncFile(dflrst_out, 'r+') as nc_out:
+  nc_out['vsnon'][:] = vsnon_new
+  nc_out['qsno001'][:] = qsnon_new
+  nc_out['aicen'][:] = aicen_new
+  nc_out['vicen'][:] = vicen_new
+  nc_out['Tsfcn'][:] = Tsfcn_new
+  for ilr in range(1, nilrs+1):
+    varnum = f"{ilr:03d}"
+    nc_out[f"sice{varnum}"][:] = sicen_new[varnum]
+    nc_out[f"qice{varnum}"][:] = qicen_new[varnum]
+  for attr_name, attr_value in updated_attrs.items():
+    nc_out.setncattr(attr_name, attr_value)
 
 
 f_plt = False
