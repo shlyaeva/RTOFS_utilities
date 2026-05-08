@@ -11,12 +11,20 @@ import matplotlib.pyplot as plt
 from yaml import safe_load
 
 #import pickle
-PPTHN = '/home/Dmitry.Dukhovskoy/python'
+PPTHN = os.environ.get('PPTHN', '').strip()
 if len(PPTHN) == 0:
-  cwd   = os.getcwd()
-  aa    = cwd.split("/")
-  nii   = cwd.split("/").index('python')
-  PPTHN = '/' + os.path.join(*aa[:nii+1])
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  ppthn_candidate = os.path.abspath(os.path.join(script_dir, '..', '..'))
+  if os.path.isdir(os.path.join(ppthn_candidate, 'MyPython')):
+    PPTHN = ppthn_candidate
+  else:
+    cwd = os.getcwd()
+    parts = [pp for pp in cwd.split('/') if pp]
+    if 'python' in parts:
+      idx = parts.index('python')
+      PPTHN = '/' + os.path.join(*parts[:idx+1])
+    else:
+      PPTHN = ppthn_candidate
 sys.path.append(PPTHN + '/MyPython/hycom_utils')
 sys.path.append(PPTHN + '/MyPython/draw_map')
 sys.path.append(PPTHN + '/MyPython')
