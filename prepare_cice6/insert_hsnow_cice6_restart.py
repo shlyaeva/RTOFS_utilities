@@ -356,8 +356,29 @@ ds_in.close()
 # Aggregated ice partial area:
 aice = np.sum(aicen, axis=0).squeeze()
 
+# Convert target snow depth to meters once.
+if units_m:
+  HSi_m = HSi
+else:
+  HSi_m = HSi * 0.01
+
+# Current mean snow thickness over ice (m); 0 where no ice.
+hs_old = np.divide(np.sum(vsnon, axis=0), aice, out=np.zeros_like(aice), where=aice > puny)
+
 # Select points to insert:
-Jins, Iins = np.where((HSi > puny) & (~np.isnan(HSi)) & (aice > puny))
+hs_tol = 1.e-4
+Jins, Iins = np.where((HSi_m > puny) & (~np.isnan(HSi_m)) & (aice > puny))
+
+if len(Jins) > 0:
+  hs_target_pts = HSi_m[Jins, Iins]
+  hs_old_pts = hs_old[Jins, Iins]
+  keep_pts = np.abs(hs_target_pts - hs_old_pts) > hs_tol
+  nskip = int(len(Jins) - np.count_nonzero(keep_pts))
+  if nskip > 0:
+    Jins = Jins[keep_pts]
+    Iins = Iins[keep_pts]
+    print(f"Skipping {nskip} points with negligible hsnow changes")
+
 Xins = LON[Jins,Iins]
 Yins = LAT[Jins,Iins]
 npnts = len(Jins)
@@ -392,10 +413,7 @@ for ipp in range(npnts):
   tsn = tsfcn[:,j0,i0]        # snow/ice surface T by cats
 
   # New ice snow thickness over sea ice:
-  if units_m:
-    hsn_new = HSi[j0,i0]        # m of snow over sea ice
-  else:
-    hsn_new = HSi[j0,i0]*0.01   # m of snow over sea ice 
+  hsn_new = HSi_m[j0,i0]        # m of snow over sea ice
 
   # This should not happen (target HSi assumed to be m3/m2_ice) just to make sure
   # there is no very thick snow --> possible crash in picard iteration for very thick snow or ice

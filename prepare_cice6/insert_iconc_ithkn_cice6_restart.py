@@ -440,6 +440,33 @@ Xins = LON[Jins,Iins]
 Yins = LAT[Jins,Iins]
 npnts = len(Jins)
 
+# Skip points with negligible target changes to reduce per-point loop cost.
+iconc_tol = 1.e-8
+ithkn_tol = 1.e-4
+vitot_min_filter = 0.05
+if npnts > 0:
+  ai_old_pts = aice[Jins, Iins]
+  ai_target_pts = np.clip(AICEint[Jins, Iins], 0., 1.)
+  chg_iconc = np.abs(ai_target_pts - ai_old_pts) > iconc_tol
+
+  chg_thkn = np.zeros_like(chg_iconc, dtype=bool)
+  if ins_thkn:
+    vtot_old_map = np.sum(vicen, axis=0)
+    vice_old_pts = vtot_old_map[Jins, Iins]
+    vice_clim_pts = ITHKN[Jins, Iins]
+    valid_clim = np.isfinite(vice_clim_pts) & (vice_clim_pts > vitot_min_filter)
+    chg_thkn = valid_clim & (np.abs(vice_clim_pts - vice_old_pts) > ithkn_tol)
+
+  keep_pts = chg_iconc | chg_thkn
+  nskip = int(npnts - np.count_nonzero(keep_pts))
+  if nskip > 0:
+    Jins = Jins[keep_pts]
+    Iins = Iins[keep_pts]
+    Xins = Xins[keep_pts]
+    Yins = Yins[keep_pts]
+    npnts = len(Jins)
+    print(f"Skipping {nskip} points with negligible iconc/ithkn changes")
+
 npnts_ithkn = 0
 if ins_thkn:
   mask_ithkn = (RMsk > 0) & np.isfinite(ITHKN)
