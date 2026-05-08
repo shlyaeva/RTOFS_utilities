@@ -216,6 +216,12 @@ rho_ocean = 1025.
 if hsnow_file is None:
   if regn == 'global':
     raise ValueError("For regn='global', provide --hsnow_file (and --hsnow_var if needed)")
+  if not os.path.isdir(pthdata):
+    raise FileNotFoundError(
+      "MOM6 data root is not accessible for default snow-depth discovery. "
+      f"Resolved pthdata='{pthdata}'. "
+      "Provide --mom6_data_dir (or YAML paths.mom6_data_dir), or pass --hsnow_file explicitly."
+    )
   pthsnow = os.path.join(pthdata,'snow_nasa','monthly_clim')
   flhsn = 'SSMI_hsnow_mnthclim_1998_2007_mesh025_1440x1080_south.nc'
   dflhsn = os.path.join(pthsnow,flhsn)

@@ -50,6 +50,39 @@ def find_varnm(dflithkn, var_opt):
     
   return
 
+
+def _read_lon_lat_from_gridfile(dfgrid):
+  lon_lat_pairs = [
+      ('geolon', 'geolat'),
+      ('GEOLON', 'GEOLAT'),
+      ('TLON', 'TLAT'),
+      ('lon', 'lat'),
+  ]
+  with xarray.open_dataset(dfgrid) as ds_grid:
+    for lon_nm, lat_nm in lon_lat_pairs:
+      if lon_nm in ds_grid and lat_nm in ds_grid:
+        lon = ds_grid[lon_nm].data.squeeze()
+        lat = ds_grid[lat_nm].data.squeeze()
+        if lon.ndim == 2 and lat.ndim == 2:
+          return lon, lat
+
+  return None, None
+
+
+def _read_ocean_mask_from_gridfile(dfgrid):
+  mask_names = ['mask2d', 'wet', 'ocean_mask', 'mask', 'tmask']
+  with xarray.open_dataset(dfgrid) as ds_grid:
+    for mask_nm in mask_names:
+      if mask_nm in ds_grid:
+        msk = ds_grid[mask_nm].data.squeeze()
+        if msk.ndim != 2:
+          continue
+        msk = np.where(np.isnan(msk), 0, msk)
+        msk = np.where(msk > 0, 1, 0)
+        return msk
+
+  return None
+
 rest_date = 20250103
 rest_hr = 0
 regn = 'south'
@@ -242,19 +275,40 @@ if mom6_topo_file is None:
 else:
   dftopo_mom = mom6_topo_file
 
-with xarray.open_dataset(dftopo_mom) as dstopo:
-  HH = dstopo['depth'].data.squeeze()
+if not os.path.isfile(dfgrid_mom):
+  raise FileNotFoundError(
+    "MOM6 grid file is not accessible. "
+    f"Resolved hgrid='{dfgrid_mom}'. "
+    "Provide explicit path via --mom6_hgrid_file (or YAML paths.mom6_hgrid_file)."
+  )
 
-HH = np.where(HH < 1.e-20, np.nan, HH)
-HH = -HH
-HH = np.where(np.isnan(HH), 1., HH)
-jdm, idm = HH.shape
+LON, LAT = _read_lon_lat_from_gridfile(dfgrid_mom)
+if LON is None or LAT is None:
+  LON, LAT = mmom6.read_mom6grid(dfgrid_mom, grdpnt='hgrid')
 
-LON, LAT = mmom6.read_mom6grid(dfgrid_mom, grdpnt='hgrid')
+RMsk = _read_ocean_mask_from_gridfile(dfgrid_mom)
+if RMsk is None:
+  if not os.path.isfile(dftopo_mom):
+    raise FileNotFoundError(
+      "Could not get ocean mask from grid file and MOM6 topography file is not accessible. "
+      f"Resolved grid='{dfgrid_mom}', topo='{dftopo_mom}'. "
+      "Provide a grid file with mask2d/wet/ocean_mask (or similar), "
+      "or set --mom6_topo_file (YAML: paths.mom6_topo_file)."
+    )
+  with xarray.open_dataset(dftopo_mom) as dstopo:
+    HH = dstopo['depth'].data.squeeze()
+
+  HH = np.where(HH < 1.e-20, np.nan, HH)
+  HH = -HH
+  HH = np.where(np.isnan(HH), 1., HH)
+  RMsk = np.where(HH >= 0, 0, 1)
+else:
+  HH = np.where(RMsk > 0, -1.0, 1.0)
+
+jdm, idm = RMsk.shape
 
 # Interpolated NSIDC ice conc:
 pthnsidc = os.path.join(pthdata,f"NRT_NOAA_NSIDC_seaconc/{yrN}")
-RMsk = np.where(HH>=0, 0, 1)
 if regn == 'south':
   RMsk[LAT > -60.] = 0
 elif regn == 'north':
@@ -270,6 +324,12 @@ print(f"new restart: {yrN}/{mmN:02d}/{ddN:02d}:{hrN:02d}")
 if iconc_file is None:
   if regn == 'global':
     raise ValueError("For regn='global', provide --iconc_file (and --iconc_var if needed)")
+  if not os.path.isdir(pthdata):
+    raise FileNotFoundError(
+      "MOM6 data root is not accessible for default target discovery. "
+      f"Resolved pthdata='{pthdata}'. "
+      "Provide --mom6_data_dir (or YAML paths.mom6_data_dir), or pass --iconc_file explicitly."
+    )
   pthnsidc, fliconc = mc6util.pathfname_icesnow_mesh025(
       fyaml, node_nm, "iconc_NSIDC", YR=yrN, MM=mmN, regn=regn)
   dfliconc = os.path.join(pthnsidc, fliconc)
@@ -289,6 +349,12 @@ if ins_thkn:
   if ithkn_file is None:
     if regn == 'global':
       raise ValueError("For regn='global' with --ithkn 1, provide --ithkn_file")
+    if not os.path.isdir(pthdata):
+      raise FileNotFoundError(
+        "MOM6 data root is not accessible for default thickness discovery. "
+        f"Resolved pthdata='{pthdata}'. "
+        "Provide --mom6_data_dir (or YAML paths.mom6_data_dir), or pass --ithkn_file explicitly."
+      )
     pthithkn, flithkn = mc6util.pathfname_icesnow_mesh025(fyaml, node_nm, 'ithkn_clim', regn=regn)
     dflithkn = os.path.join(pthithkn, flithkn)
   else:

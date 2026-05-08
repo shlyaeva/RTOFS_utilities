@@ -31,6 +31,13 @@ def _as_str(path_like):
     return str(Path(path_like))
 
 
+def _resolve_path(path_like, base_dir):
+    pth = Path(path_like)
+    if pth.is_absolute():
+        return pth
+    return (base_dir / pth).resolve()
+
+
 def _get_first_present(mapping, keys, default=None):
     for key in keys:
         if key in mapping and mapping[key] is not None:
@@ -63,9 +70,11 @@ def main():
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = safe_load(f)
 
+    config_dir = args.config.resolve().parent
+
     paths = _require(cfg, ["paths"])
-    restart_in = Path(_require(paths, ["restart_in"]))
-    restart_out = Path(_require(paths, ["restart_out"]))
+    restart_in = _resolve_path(_require(paths, ["restart_in"]), config_dir)
+    restart_out = _resolve_path(_require(paths, ["restart_out"]), config_dir)
 
     options = cfg.get("options", {})
     regn = options.get("region", "south")
@@ -91,6 +100,14 @@ def main():
     mom6_grid_dir = _get_first_present(paths, ["mom6_grid_dir", "grid_dir"])
     mom6_hgrid_file = _get_first_present(paths, ["mom6_hgrid_file", "hgrid_file"])
     mom6_topo_file = _get_first_present(paths, ["mom6_topo_file", "topo_file"])
+    if mom6_data_dir is not None:
+        mom6_data_dir = _resolve_path(mom6_data_dir, config_dir)
+    if mom6_grid_dir is not None:
+        mom6_grid_dir = _resolve_path(mom6_grid_dir, config_dir)
+    if mom6_hgrid_file is not None:
+        mom6_hgrid_file = _resolve_path(mom6_hgrid_file, config_dir)
+    if mom6_topo_file is not None:
+        mom6_topo_file = _resolve_path(mom6_topo_file, config_dir)
 
     # Resolve restart date/hour from common key aliases first,
     # then infer date from path tokens if needed.
@@ -133,7 +150,7 @@ def main():
             cmd1 += ["--rhr_out", str(rhr_out)]
 
         if "file" in stage1:
-            cmd1 += ["--iconc_file", _as_str(stage1["file"])]
+            cmd1 += ["--iconc_file", _as_str(_resolve_path(stage1["file"], config_dir))]
             if "variable" in stage1:
                 cmd1 += ["--iconc_var", str(stage1["variable"])]
 
@@ -147,7 +164,7 @@ def main():
             cmd1 += ["--mom6_topo_file", _as_str(mom6_topo_file)]
 
         if "file" in stage2:
-            cmd1 += ["--ithkn_file", _as_str(stage2["file"])]
+            cmd1 += ["--ithkn_file", _as_str(_resolve_path(stage2["file"], config_dir))]
             if "variable" in stage2:
                 cmd1 += ["--ithkn_var", str(stage2["variable"])]
 
@@ -174,7 +191,7 @@ def main():
             cmd2 += ["--rhr_out", str(rhr_out)]
 
         if "file" in stage3:
-            cmd2 += ["--hsnow_file", _as_str(stage3["file"])]
+            cmd2 += ["--hsnow_file", _as_str(_resolve_path(stage3["file"], config_dir))]
             if "variable" in stage3:
                 cmd2 += ["--hsnow_var", str(stage3["variable"])]
 
