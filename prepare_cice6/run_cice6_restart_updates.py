@@ -87,6 +87,11 @@ def main():
     restart_out_dir = restart_out.parent
     restart_out_name = restart_out.name
 
+    mom6_data_dir = _get_first_present(paths, ["mom6_data_dir", "data_dir"])
+    mom6_grid_dir = _get_first_present(paths, ["mom6_grid_dir", "grid_dir"])
+    mom6_hgrid_file = _get_first_present(paths, ["mom6_hgrid_file", "hgrid_file"])
+    mom6_topo_file = _get_first_present(paths, ["mom6_topo_file", "topo_file"])
+
     # Resolve restart date/hour from common key aliases first,
     # then infer date from path tokens if needed.
     rdate = _to_int_or_none(_get_first_present(options, ["rdate", "restart_date", "date", "rdate_in"]))
@@ -132,6 +137,15 @@ def main():
             if "variable" in stage1:
                 cmd1 += ["--iconc_var", str(stage1["variable"])]
 
+        if mom6_data_dir is not None:
+            cmd1 += ["--mom6_data_dir", _as_str(mom6_data_dir)]
+        if mom6_grid_dir is not None:
+            cmd1 += ["--mom6_grid_dir", _as_str(mom6_grid_dir)]
+        if mom6_hgrid_file is not None:
+            cmd1 += ["--mom6_hgrid_file", _as_str(mom6_hgrid_file)]
+        if mom6_topo_file is not None:
+            cmd1 += ["--mom6_topo_file", _as_str(mom6_topo_file)]
+
         if "file" in stage2:
             cmd1 += ["--ithkn_file", _as_str(stage2["file"])]
             if "variable" in stage2:
@@ -163,6 +177,9 @@ def main():
             cmd2 += ["--hsnow_file", _as_str(stage3["file"])]
             if "variable" in stage3:
                 cmd2 += ["--hsnow_var", str(stage3["variable"])]
+
+        if mom6_data_dir is not None:
+            cmd2 += ["--mom6_data_dir", _as_str(mom6_data_dir)]
 
         print("[2/2] Running hsnow insertion...")
         subprocess.run(cmd2, check=True)

@@ -14,15 +14,10 @@
 """
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import sys
 import importlib
-import matplotlib
 import xarray
-from copy import copy
-import matplotlib.colors as colors
 from yaml import safe_load
-from mpl_toolkits.basemap import Basemap, cm
 import argparse
 from pathlib import Path
 
@@ -39,14 +34,8 @@ sys.path.extend([
     os.path.join(PPTHN, 'MyPython', 'mom6_utils')
 ])
 
-from mod_utils_fig import bottom_text
 import mod_time as mtime
-import mod_utils as mutil
-import mod_colormaps as mclrmps
-import mod_anls_seas as manseas
-import mod_utils_ob as mutob
 import mod_mom6 as mmom6
-import mod_misc1 as mmisc
 import mod_cice6_utils as mc6util
 importlib.reload(mc6util)
 
@@ -80,6 +69,10 @@ parser.add_argument("--pth_out", help="output restart directory where new file b
 parser.add_argument("--flrst_out", help="new rest file, otherwise name constructed from rdate_out", type=str)
 parser.add_argument("--regn", help=f"where icon incerted", 
                     choices=['north','south','global'], type=str)
+parser.add_argument("--mom6_data_dir", help="override MOM6 data root directory", type=str)
+parser.add_argument("--mom6_grid_dir", help="override MOM6 grid directory", type=str)
+parser.add_argument("--mom6_hgrid_file", help="override full path to MOM6 hgrid file", type=str)
+parser.add_argument("--mom6_topo_file", help="override full path to MOM6 topography file", type=str)
 parser.add_argument("--iconc_file", help="optional custom interpolated ice concentration file", type=str)
 parser.add_argument("--iconc_var", help="variable name in --iconc_file (default: ice_conc)", type=str,
                     default="ice_conc")
@@ -135,6 +128,10 @@ else:
 
 pth_in = args.pth_in if args.pth_in else None
 pth_out = args.pth_out if args.pth_out else None
+mom6_data_dir = args.mom6_data_dir if args.mom6_data_dir else None
+mom6_grid_dir = args.mom6_grid_dir if args.mom6_grid_dir else None
+mom6_hgrid_file = args.mom6_hgrid_file if args.mom6_hgrid_file else None
+mom6_topo_file = args.mom6_topo_file if args.mom6_topo_file else None
 iconc_file = args.iconc_file if args.iconc_file else None
 iconc_var = args.iconc_var if args.iconc_var else "ice_conc"
 ithkn_file = args.ithkn_file if args.ithkn_file else None
@@ -176,10 +173,18 @@ elif 'an' in machine:
   node_nm = "ppan"
 else:
   print("Unknown machine:", machine)
+  node_nm = None
 
-fyaml = 'paths_ufs.yaml'
+fyaml = str(Path(__file__).resolve().with_name('paths_ufs.yaml'))
 with open(fyaml) as ff:
   pths_ufs = safe_load(ff)
+
+if node_nm is None or node_nm not in pths_ufs:
+  if 'dtn' in pths_ufs:
+    node_nm = 'dtn'
+  else:
+    node_nm = next(iter(pths_ufs.keys()))
+  print(f"Using node mapping '{node_nm}' from {fyaml}")
 
 if pth_in is None:
   pthrest = os.path.join(pths_ufs[node_nm]["MOM6"]["pthrest"],'new')
@@ -193,7 +198,10 @@ if pth_out is None:
 else:
   pthrest_out = pth_out
 
-pthdata = pths_ufs[node_nm]["MOM6"]["pthdata"]
+if mom6_data_dir is None:
+  pthdata = pths_ufs[node_nm]["MOM6"]["pthdata"]
+else:
+  pthdata = mom6_data_dir
 
 # CICE parameters:
 puny      = 1.e-11
@@ -216,9 +224,23 @@ nslyr     = 1   # snow layers
 Tmin      = -100.   # minimum snow T
 
 # Get MOM6 grid
-pthgrid = pths_ufs[node_nm]["MOM6"]["pthgrid"]
-dfgrid_mom = os.path.join(pthgrid, "ocean_hgrid.1440x1080.nc")
-dftopo_mom = os.path.join(pthgrid, "ocean_topog.1440x1080.nc")
+if mom6_hgrid_file is None or mom6_topo_file is None:
+  if mom6_grid_dir is None:
+    pthgrid = pths_ufs[node_nm]["MOM6"]["pthgrid"]
+  else:
+    pthgrid = mom6_grid_dir
+else:
+  pthgrid = mom6_grid_dir if mom6_grid_dir is not None else "<explicit-files>"
+
+if mom6_hgrid_file is None:
+  dfgrid_mom = os.path.join(pthgrid, "ocean_hgrid.1440x1080.nc")
+else:
+  dfgrid_mom = mom6_hgrid_file
+
+if mom6_topo_file is None:
+  dftopo_mom = os.path.join(pthgrid, "ocean_topog.1440x1080.nc")
+else:
+  dftopo_mom = mom6_topo_file
 
 with xarray.open_dataset(dftopo_mom) as dstopo:
   HH = dstopo['depth'].data.squeeze()
@@ -695,6 +717,10 @@ ds_out.close()
 
 f_plt = False
 if f_plt:
+  import matplotlib.pyplot as plt
+  from mpl_toolkits.basemap import Basemap
+  import mod_colormaps as mclrmps
+
   clrmp = mclrmps.colormap_conc()
   rmin = 0.
   rmax = 1.

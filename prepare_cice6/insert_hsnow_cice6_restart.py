@@ -14,15 +14,10 @@
 """
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import sys
 import importlib
-import matplotlib
 import xarray
-from copy import copy
-import matplotlib.colors as colors
 from yaml import safe_load
-from mpl_toolkits.basemap import Basemap, cm
 import argparse
 from pathlib import Path
 
@@ -39,7 +34,6 @@ sys.path.extend([
     os.path.join(PPTHN, 'MyPython', 'mom6_utils')
 ])
 
-from mod_utils_fig import bottom_text
 import mod_time as mtime
 import mod_swstate as msws
 import mod_cice6_utils as mc6util
@@ -63,6 +57,7 @@ parser.add_argument("--flrst_out", help="new rest file, otherwise name construct
 parser.add_argument("--regn", help=f"where icon incerted: south, north, global, default={regn}", type=str)
 parser.add_argument("--pth_in", help="input restart directory, default keeps script behavior", type=str)
 parser.add_argument("--pth_out", help="output restart directory, default uses input restart directory", type=str)
+parser.add_argument("--mom6_data_dir", help="override MOM6 data root directory", type=str)
 parser.add_argument("--hsnow_file", help="optional custom interpolated snow depth file", type=str)
 parser.add_argument("--hsnow_var", help="variable name in --hsnow_file (default: snow_depth)",
                     type=str, default="snow_depth")
@@ -72,6 +67,7 @@ flrst_in  = args.flrst_in if args.flrst_in else None
 flrst_out = args.flrst_out if args.flrst_out else None
 pth_in = args.pth_in if args.pth_in else None
 pth_out = args.pth_out if args.pth_out else None
+mom6_data_dir = args.mom6_data_dir if args.mom6_data_dir else None
 hsnow_file = args.hsnow_file if args.hsnow_file else None
 hsnow_var = args.hsnow_var if args.hsnow_var else "snow_depth"
 regn = args.regn if args.regn else regn
@@ -149,10 +145,18 @@ elif 'an' in machine:
   node_nm = "ppan"
 else:
   print("Unknown machine:", machine)
+  node_nm = None
 
-fyaml = 'paths_ufs.yaml'
+fyaml = str(Path(__file__).resolve().with_name('paths_ufs.yaml'))
 with open(fyaml) as ff:
   pths_ufs = safe_load(ff)
+
+if node_nm is None or node_nm not in pths_ufs:
+  if 'dtn' in pths_ufs:
+    node_nm = 'dtn'
+  else:
+    node_nm = next(iter(pths_ufs.keys()))
+  print(f"Using node mapping '{node_nm}' from {fyaml}")
 
 
 def extract_suffix(fname):
@@ -170,7 +174,10 @@ else:
   pthrest = pth_in
 pthrest_out = pth_out if pth_out is not None else pthrest
 
-pthdata = pths_ufs[node_nm]["MOM6"]["pthdata"]
+if mom6_data_dir is None:
+  pthdata = pths_ufs[node_nm]["MOM6"]["pthdata"]
+else:
+  pthdata = mom6_data_dir
 
 # CICE parameters:
 puny      = 1.e-11
@@ -518,6 +525,11 @@ ds_out.close()
 
 f_chck = False
 if f_chck:
+  import matplotlib.pyplot as plt
+  from mpl_toolkits.basemap import Basemap
+  import mod_colormaps as mclrmps
+  from mod_utils_fig import bottom_text
+
   plt.ion()
 
   units = 'm'

@@ -23,6 +23,11 @@ python RTOFS_utilities/prepare_cice6/run_cice6_restart_updates.py \
 paths:
   restart_in: /path/to/original_restart.nc
   restart_out: /path/to/output_restart.nc
+  # optional path overrides for portability
+  # mom6_data_dir: /path/to/mom6/data_root
+  # mom6_grid_dir: /path/to/mom6/grid_dir
+  # mom6_hgrid_file: /path/to/mom6/grid_dir/ocean_hgrid.1440x1080.nc
+  # mom6_topo_file: /path/to/mom6/grid_dir/ocean_topog.1440x1080.nc
 
 options:                       # optional
   region: south                # south|north|global
@@ -51,6 +56,15 @@ target_snow_depth:                # optional custom file for hsnow
 - `paths.restart_out`
 
 Everything else is optional.
+
+## MOM6 path overrides
+
+- `paths.mom6_data_dir`
+  - Used by stage-1/2 when default data root from `paths_ufs.yaml` is not portable.
+- `paths.mom6_grid_dir`
+  - Used by stage-1 to locate default MOM6 grid/topo files.
+- `paths.mom6_hgrid_file` and `paths.mom6_topo_file`
+  - Explicit full paths for stage-1 grid/topo files; if set, they take precedence.
 
 ## How input/output files are used
 
